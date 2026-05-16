@@ -1,0 +1,204 @@
+{
+  "name": "ArcVault Intake & Triage Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "arcvault-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "n8n-node-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "arcvault-intake-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Step 1: Ingestion — normalize incoming message\nconst body = $input.first().json.body || $input.first().json;\n\nconst message = {\n  id: `msg_${Date.now()}`,\n  source: body.source || 'Unknown',\n  timestamp: new Date().toISOString(),\n  raw_message: body.raw_message || body.message || body.content || ''\n};\n\nif (!message.raw_message) {\n  throw new Error('No message content found in request body');\n}\n\nreturn [{ json: message }];"
+      },
+      "id": "n8n-node-ingestion",
+      "name": "Step 1: Ingestion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-6"
+            },
+            {
+              "name": "max_tokens",
+              "value": "512"
+            },
+            {
+              "name": "messages",
+              "value": "={{ JSON.stringify([{ role: 'user', content: `You are a B2B SaaS support triage specialist for ArcVault. Classify the inbound customer message below.\\n\\nReturn a JSON object with exactly these fields:\\n{\\n  \"category\": \"<Bug Report | Feature Request | Billing Issue | Technical Question | Incident / Outage>\",\\n  \"priority\": \"<Low | Medium | High>\",\\n  \"confidence_score\": <float 0.0-1.0>\\n}\\n\\nPriority: High=service disruption/billing error/blocked access. Medium=degraded functionality. Low=inquiry.\\nConfidence: 0.9+=clear match. 0.7-0.89=likely. 0.5-0.69=ambiguous. <0.5=insufficient info.\\n\\nReturn ONLY the JSON. No markdown, no explanation.\\n\\nMessage:\\n${$json.raw_message}` }]) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n8n-node-classification",
+      "name": "Step 2: Classification (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse classification response\nconst response = $input.first().json;\nconst content = response.content[0].text.trim();\n\nlet classification;\ntry {\n  const clean = content.replace(/```json|```/g, '').trim();\n  classification = JSON.parse(clean);\n} catch (e) {\n  throw new Error(`Failed to parse classification JSON: ${content}`);\n}\n\n// Validate required fields\nconst validCategories = ['Bug Report', 'Feature Request', 'Billing Issue', 'Technical Question', 'Incident / Outage'];\nconst validPriorities = ['Low', 'Medium', 'High'];\n\nif (!validCategories.includes(classification.category)) {\n  throw new Error(`Invalid category: ${classification.category}`);\n}\nif (!validPriorities.includes(classification.priority)) {\n  throw new Error(`Invalid priority: ${classification.priority}`);\n}\n\n// Merge with previous step data\nconst prev = $('Step 1: Ingestion').first().json;\n\nreturn [{ json: { ...prev, classification } }];"
+      },
+      "id": "n8n-node-parse-classification",
+      "name": "Parse Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-6" },
+            { "name": "max_tokens", "value": "512" },
+            {
+              "name": "messages",
+              "value": "={{ JSON.stringify([{ role: 'user', content: `You are a support data analyst for ArcVault. Extract structured information from this message.\\n\\nClassification: ${$json.classification.category} | ${$json.classification.priority}\\n\\nReturn JSON with:\\n{\\n  \"core_issue\": \"<one sentence summary>\",\\n  \"identifiers\": { \"<key>\": \"<value>\" },\\n  \"urgency_signal\": \"<one sentence urgency assessment>\"\\n}\\n\\nOnly include identifiers actually present. Possible keys: account_id, invoice_number, error_code, affected_component, feature_requested, integration_requested, incident_start, billed_amount, contracted_rate, discrepancy, trigger_event, scope, use_case.\\n\\nDo not invent values. Return ONLY the JSON.\\n\\nMessage:\\n${$json.raw_message}` }]) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n8n-node-enrichment",
+      "name": "Step 3: Enrichment (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse enrichment + run routing + escalation logic\nconst response = $input.first().json;\nconst content = response.content[0].text.trim();\n\nlet enrichment;\ntry {\n  enrichment = JSON.parse(content.replace(/```json|```/g, '').trim());\n} catch (e) {\n  throw new Error(`Failed to parse enrichment JSON: ${content}`);\n}\n\nconst prev = $('Parse Classification').first().json;\nconst { classification, raw_message } = prev;\n\n// ── Routing table ──────────────────────────────────\nconst ROUTING = {\n  'Bug Report': 'Engineering',\n  'Incident / Outage': 'Engineering',\n  'Feature Request': 'Product',\n  'Technical Question': 'IT / Security',\n  'Billing Issue': 'Billing'\n};\n\n// ── Escalation logic ───────────────────────────────\nconst ESCALATION_KEYWORDS = ['outage', 'down for all users', 'multiple users affected', 'stopped loading', 'completely down'];\nconst CONFIDENCE_THRESHOLD = 0.70;\nconst BILLING_THRESHOLD = 200;\n\nlet escalationFlag = false;\nlet escalationReason = null;\nconst msgLower = raw_message.toLowerCase();\n\nif (classification.confidence_score < CONFIDENCE_THRESHOLD) {\n  escalationFlag = true;\n  escalationReason = `Confidence ${Math.round(classification.confidence_score * 100)}% below ${CONFIDENCE_THRESHOLD * 100}% threshold`;\n}\n\nif (!escalationFlag) {\n  for (const kw of ESCALATION_KEYWORDS) {\n    if (msgLower.includes(kw)) {\n      escalationFlag = true;\n      escalationReason = `Escalation keyword matched: '${kw}'`;\n      break;\n    }\n  }\n}\n\nif (!escalationFlag && enrichment.identifiers?.discrepancy) {\n  const discStr = enrichment.identifiers.discrepancy.replace(/[$,]/g, '');\n  const disc = parseFloat(discStr);\n  if (!isNaN(disc) && disc > BILLING_THRESHOLD) {\n    escalationFlag = true;\n    escalationReason = `Billing discrepancy $${disc} exceeds $${BILLING_THRESHOLD} threshold`;\n  }\n}\n\nif (!escalationFlag && classification.category === 'Incident / Outage') {\n  escalationFlag = true;\n  escalationReason = 'Incident/Outage auto-escalates to Engineering via Escalation queue';\n}\n\nconst destinationQueue = escalationFlag ? 'Escalation' : (ROUTING[classification.category] || 'Escalation');\n\nconst routing = {\n  destination_queue: destinationQueue,\n  routing_reason: escalationFlag ? escalationReason : `${classification.category} routes to ${destinationQueue} queue`,\n  escalation_flag: escalationFlag,\n  escalation_reason: escalationReason\n};\n\nreturn [{ json: { ...prev, enrichment, routing } }];"
+      },
+      "id": "n8n-node-routing",
+      "name": "Steps 4+6: Routing & Escalation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "claude-sonnet-4-6" },
+            { "name": "max_tokens", "value": "256" },
+            {
+              "name": "messages",
+              "value": "={{ JSON.stringify([{ role: 'user', content: `Write a 2-3 sentence internal handoff note for the ArcVault support team.\\n\\nState the issue clearly, include key identifiers, and end with a recommended action for the receiving team. Professional tone, no filler phrases.\\n\\nRecord:\\n- Category: ${$json.classification.category}\\n- Priority: ${$json.classification.priority}\\n- Core Issue: ${$json.enrichment.core_issue}\\n- Identifiers: ${JSON.stringify($json.enrichment.identifiers)}\\n- Urgency: ${$json.enrichment.urgency_signal}\\n- Queue: ${$json.routing.destination_queue}\\n- Escalated: ${$json.routing.escalation_flag}\\n\\nReturn ONLY the summary text.` }]) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n8n-node-summary",
+      "name": "Step 5: Summary (LLM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assemble final record\nconst summaryResponse = $input.first().json;\nconst summary = summaryResponse.content[0].text.trim();\n\nconst prev = $('Steps 4+6: Routing & Escalation').first().json;\n\nconst finalRecord = {\n  id: prev.id,\n  source: prev.source,\n  timestamp: prev.timestamp,\n  raw_message: prev.raw_message,\n  classification: prev.classification,\n  enrichment: prev.enrichment,\n  routing: prev.routing,\n  summary\n};\n\nreturn [{ json: finalRecord }];"
+      },
+      "id": "n8n-node-assemble",
+      "name": "Assemble Final Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "n8n-node-respond",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Step 1: Ingestion", "type": "main", "index": 0 }]]
+    },
+    "Step 1: Ingestion": {
+      "main": [[{ "node": "Step 2: Classification (LLM)", "type": "main", "index": 0 }]]
+    },
+    "Step 2: Classification (LLM)": {
+      "main": [[{ "node": "Parse Classification", "type": "main", "index": 0 }]]
+    },
+    "Parse Classification": {
+      "main": [[{ "node": "Step 3: Enrichment (LLM)", "type": "main", "index": 0 }]]
+    },
+    "Step 3: Enrichment (LLM)": {
+      "main": [[{ "node": "Steps 4+6: Routing & Escalation", "type": "main", "index": 0 }]]
+    },
+    "Steps 4+6: Routing & Escalation": {
+      "main": [[{ "node": "Step 5: Summary (LLM)", "type": "main", "index": 0 }]]
+    },
+    "Step 5: Summary (LLM)": {
+      "main": [[{ "node": "Assemble Final Record", "type": "main", "index": 0 }]]
+    },
+    "Assemble Final Record": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
