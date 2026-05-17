@@ -1,6 +1,7 @@
 from agents import Agent, Runner
 from pydantic import field_validator
 from app.schemas.pipeline import ClassificationResult
+from app.config import resolve_model
 
 VALID_CATEGORIES = {
     "Bug Report", "Feature Request", "Billing Issue",
@@ -59,7 +60,7 @@ def _make_agent(model: str) -> Agent:
     return Agent(
         name="ClassificationAgent",
         instructions=SYSTEM_PROMPT,
-        model=model,
+        model=resolve_model(model),
         output_type=_ValidatedClassification,
     )
 

@@ -1,5 +1,6 @@
 from agents import Agent, Runner
 from app.schemas.pipeline import ClassificationResult, EnrichmentResult
+from app.config import resolve_model
 
 SYSTEM_PROMPT = """\
 You are a support data analyst for ArcVault. You always respond with valid JSON only — no markdown, no explanation.
@@ -28,7 +29,7 @@ def _make_agent(model: str) -> Agent:
     return Agent(
         name="EnrichmentAgent",
         instructions=SYSTEM_PROMPT,
-        model=model,
+        model=resolve_model(model),
         output_type=EnrichmentResult,
     )
 

@@ -1,6 +1,7 @@
 from agents import Agent, Runner
 from pydantic import BaseModel
 from app.schemas.pipeline import ClassificationResult, EnrichmentResult, RoutingResult
+from app.config import resolve_model
 
 SYSTEM_PROMPT = """\
 You are writing an internal handoff note for the ArcVault support team.
@@ -24,7 +25,7 @@ def _make_agent(model: str) -> Agent:
     return Agent(
         name="SummaryAgent",
         instructions=SYSTEM_PROMPT,
-        model=model,
+        model=resolve_model(model),
         output_type=_SummaryOutput,
     )
 
