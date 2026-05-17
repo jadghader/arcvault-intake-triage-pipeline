@@ -9,7 +9,6 @@
 ## Project Overview
 
 **Repo:** `arcvault-intake-triage-pipeline`
-**Assessment by:** Valsoft Corporation — AI Engineer Technical Assessment (Feb 2026)
 **Status:** Full-stack monorepo — n8n workflow (primary), Python CLI (verification), FastAPI + React (production proof-of-concept).
 
 This repo implements an AI-powered intake and triage pipeline for a synthetic B2B SaaS company
@@ -176,7 +175,7 @@ Key locations:
 
 > Append new sessions below as you work. This gives Claude Code full context when resuming.
 
-### Session 1 — Initial Build (Feb 2026)
+### Session 1 — Initial Build
 - Created full monorepo structure
 - Wrote all 3 LLM prompts (classification, enrichment, summary)
 - Implemented n8n workflow JSON covering all 6 steps
@@ -314,7 +313,7 @@ Re-add `.github/` only if the repo is pushed to GitHub and CI is actually desire
 When starting a new Claude Code session on this repo, paste this at the top:
 
 ```
-Read CLAUDE.md first. This is an AI triage pipeline for a Valsoft technical assessment.
+Read CLAUDE.md first. This is an AI triage pipeline for technical assessment.
 The full architecture, routing logic, prompt decisions, and session history are documented there.
 Current task: [describe what you want to do]
 ```

@@ -105,11 +105,13 @@ Priority rules:
 - Medium: degraded functionality, feature requests with clear business impact
 - Low: general inquiries, pre-sales, minor feedback
 
-Confidence score bands:
-- 0.90-1.0: clearly one category, no ambiguity
-- 0.70-0.89: likely correct, minor signals point elsewhere
-- 0.50-0.69: genuinely ambiguous between two categories
-- below 0.50: insufficient information"""
+Confidence score rules — you MUST use the full range, not default to 0.95:
+- 0.90-1.0: message fits exactly one category with no ambiguity whatsoever
+- 0.70-0.89: likely correct but the message has signals that could point to another category
+- 0.50-0.69: genuinely ambiguous — two categories are both plausible
+- below 0.50: insufficient information to classify reliably
+
+IMPORTANT: A message asking about SSO setup or integrations could be either Technical Question OR Feature Request — score it 0.70-0.85, not 0.95. A message about a login error is clearly a Bug Report — score it 0.90+. Do NOT give 0.95 to every message."""
 
 ENRICHMENT_SYSTEM = """You are a support data analyst for ArcVault. You always respond with valid JSON only — no markdown, no explanation.
 
@@ -127,7 +129,10 @@ account_id, invoice_number, error_code, affected_component, feature_requested,
 integration_requested, incident_start, billed_amount, contracted_rate, discrepancy,
 trigger_event, scope, use_case, context
 
-Do not invent or infer values not stated in the message. If no identifiers are present, return an empty object {}."""
+IMPORTANT rules for identifiers:
+- Do not invent or infer values not stated in the message
+- If no identifiers are present, return an empty object {}
+- "discrepancy" must be a numeric dollar amount as a plain number string, e.g. "260" not "charge exceeds contract rate". Calculate it from billed_amount minus contracted_rate if both are present in the message."""
 
 SUMMARY_SYSTEM = """You write internal handoff notes for the ArcVault support team. Write exactly 2-3 sentences. Professional, direct tone — no filler phrases like 'I hope this helps' or 'please let me know'. State the issue, include key identifiers, end with a concrete recommended action for the receiving team. Return only the summary text — no labels, no JSON."""
 

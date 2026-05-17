@@ -36,11 +36,13 @@ Priority rules:
 - Medium: degraded functionality, feature requests with clear business impact
 - Low: general inquiries, pre-sales, minor feedback
 
-Confidence score bands:
-- 0.90-1.0: clearly one category, no ambiguity
-- 0.70-0.89: likely correct, minor signals point elsewhere
-- 0.50-0.69: genuinely ambiguous between two categories
-- below 0.50: insufficient information
+Confidence score rules — you MUST use the full range, not default to 0.95:
+- 0.90-1.0: message fits exactly one category with no ambiguity whatsoever
+- 0.70-0.89: likely correct but the message has signals that could point to another category
+- 0.50-0.69: genuinely ambiguous — two categories are both plausible
+- below 0.50: insufficient information to classify reliably
+
+IMPORTANT: A message asking about SSO setup or integrations could be either Technical Question OR Feature Request — score it 0.70-0.85, not 0.95. A message about a login error is clearly a Bug Report — score it 0.90+. Do NOT give 0.95 to every message.
 ```
 
 ### User message

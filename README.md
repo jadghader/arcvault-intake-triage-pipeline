@@ -1,6 +1,6 @@
 # ArcVault Intake & Triage Pipeline
 
-> AI Engineer Technical Assessment — Valsoft Corporation | February 2026
+> AI Engineer Technical Assessment 
 
 An AI-powered intake, classification, enrichment, and routing pipeline for unstructured
 B2B customer support messages.
