@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import configure_litellm_env
+from app.config import configure_env
 from app.routers import pipeline, records, models
 
-configure_litellm_env()
+configure_env()
 
 app = FastAPI(title="ArcVault Pipeline API", version="1.0.0")
 

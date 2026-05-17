@@ -7,6 +7,8 @@ from typing import Optional
 
 BASE_DIR = Path(__file__).parent.parent.parent.parent  # repo root
 
+# Model IDs as understood by the OpenAI Agents SDK / LiteLLM model-string convention.
+# Groq and Mistral models are prefixed so the Agents SDK routes them correctly.
 AVAILABLE_MODELS: dict[str, list[str]] = {
     "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-7"],
     "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
@@ -26,20 +28,24 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
 class Settings(BaseSettings):
-    anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")
-    openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
-    groq_api_key: Optional[str] = Field(None, env="GROQ_API_KEY")
-    mistral_api_key: Optional[str] = Field(None, env="MISTRAL_API_KEY")
-    output_dir: str = Field(str(BASE_DIR / "data" / "outputs"), env="OUTPUT_DIR")
+    anthropic_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
+    mistral_api_key: Optional[str] = None
+    output_dir: str = str(BASE_DIR / "data" / "outputs")
 
-    model_config = {"env_file": str(BASE_DIR / ".env"), "extra": "ignore"}
+    model_config = {
+        "env_file": str(BASE_DIR / ".env"),
+        "extra": "ignore",
+        "env_prefix": "",
+    }
 
 
 settings = Settings()
 
 
-def configure_litellm_env() -> None:
-    """Inject API keys into environment so LiteLLM can find them."""
+def configure_env() -> None:
+    """Inject API keys into environment so the OpenAI Agents SDK can find them."""
     if settings.anthropic_api_key:
         os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
     if settings.openai_api_key:

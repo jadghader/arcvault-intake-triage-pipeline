@@ -1,7 +1,11 @@
-# Backend — FastAPI + LiteLLM
+# Backend — FastAPI + OpenAI Agents SDK
 
-The Python backend for the ArcVault pipeline web app.
+The Python backend for the ArcVault pipeline web app (proof-of-concept).
 Exposes a REST API that the React frontend consumes.
+
+> **Scope:** This is not a production service — it is a proof-of-concept showing how the
+> n8n workflow design scales to a full-stack operator tool. The same six-step pipeline
+> logic runs here, orchestrated by the OpenAI Agents SDK instead of n8n.
 
 ---
 
@@ -9,8 +13,9 @@ Exposes a REST API that the React frontend consumes.
 
 | Layer | Technology |
 |---|---|
-| Framework | FastAPI 0.115 |
-| Multi-model LLM | LiteLLM 1.55 (Anthropic, OpenAI, Groq, Mistral, Ollama) |
+| Framework | FastAPI |
+| LLM orchestration | OpenAI Agents SDK — one agent per LLM step, structured output via Pydantic |
+| Multi-model | Anthropic, OpenAI, Groq, Mistral, Ollama (model string selects provider) |
 | Storage | JSON append + Excel (openpyxl) |
 | Streaming | Server-Sent Events (SSE) from `POST /api/run` |
 | Tests | pytest + pytest-asyncio |
@@ -107,7 +112,7 @@ Returns available models grouped by provider (only providers with API keys confi
 ## Multi-Model Support
 
 Models are switched by changing the `model` field in the run request.
-LiteLLM handles routing to the correct provider automatically.
+The OpenAI Agents SDK routes to the correct provider automatically via model-string prefixes.
 
 Supported providers (add the corresponding key to `.env`):
 
@@ -165,13 +170,13 @@ Tests do **not** call the LLM — routing and escalation are pure logic with no 
 backend/
 ├── app/
 │   ├── main.py               ← FastAPI app, CORS, router registration
-│   ├── config.py             ← Settings (env vars), model registry, LiteLLM env setup
+│   ├── config.py             ← Settings (env vars), model registry, env setup
 │   ├── pipeline/
-│   │   ├── classification.py ← LiteLLM call → ClassificationResult
-│   │   ├── enrichment.py     ← LiteLLM call → EnrichmentResult
+│   │   ├── classification.py ← Agents SDK ClassificationAgent → ClassificationResult
+│   │   ├── enrichment.py     ← Agents SDK EnrichmentAgent → EnrichmentResult
 │   │   ├── routing.py        ← Pure routing table logic (no LLM)
 │   │   ├── escalation.py     ← Pure escalation logic (no LLM)
-│   │   ├── summary.py        ← LiteLLM call → summary string
+│   │   ├── summary.py        ← Agents SDK SummaryAgent → summary string
 │   │   └── runner.py         ← Orchestrator; yields StepEvent objects (SSE source)
 │   ├── storage/
 │   │   ├── json_store.py     ← load_records(), append_record()
