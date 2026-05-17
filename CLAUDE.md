@@ -10,12 +10,17 @@
 
 **Repo:** `arcvault-intake-triage-pipeline`
 **Assessment by:** Valsoft Corporation — AI Engineer Technical Assessment (Feb 2026)
-**Status:** Full-stack monorepo — FastAPI backend + React frontend + n8n workflow. Backend and frontend must be started separately (see Running section).
+**Status:** Full-stack monorepo — n8n workflow (primary), Python CLI (verification), FastAPI + React (production proof-of-concept).
 
 This repo implements an AI-powered intake and triage pipeline for a synthetic B2B SaaS company
 called "ArcVault." The pipeline ingests unstructured customer messages, classifies them via LLM,
 enriches them with structured entities, routes them to the correct queue, and flags escalations
 for human review.
+
+**Role of each component:**
+- **n8n workflow** — the assessment deliverable. All six pipeline steps run inside n8n, triggered by HTTP webhook. This is what the evaluator should see and run first.
+- **Python CLI** (`backend/scripts/run_pipeline.py`) — calls the Anthropic API directly to verify prompt outputs and generate `data/outputs/processed_records.json` for submission. Not a replacement for n8n — a verification and iteration tool.
+- **FastAPI + React web app** — proof-of-concept showing how this design scales to production. The same six-step pipeline runs over a REST API with SSE streaming and a React operator UI. Not the primary deliverable; included to demonstrate production-readiness thinking.
 
 ---
 
@@ -55,17 +60,33 @@ arcvault-intake-triage-pipeline/
 
 ## Running the Project
 
-### 1 — Backend (FastAPI)
+### 1 — n8n Workflow (Primary — start here)
+```bash
+n8n import:workflow --input=n8n/workflow.json
+n8n start
+```
+Open http://localhost:5678, add Anthropic API key credential (see n8n/README.md), activate workflow.
+Full guide with all 5 curl commands and demo script → `n8n/README.md`.
+
+### 2 — Python CLI (Verification / Output Generation)
+```bash
+cp backend/.env.example .env   # fill in GROQ_API_KEY or ANTHROPIC_API_KEY
+pip install anthropic python-dotenv
+python backend/scripts/run_pipeline.py        # generates data/outputs/processed_records.json
+python backend/scripts/validate_outputs.py   # validates output schema for submission
+```
+
+### 3 — FastAPI Backend (Proof-of-Concept)
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example ../.env   # fill in ANTHROPIC_API_KEY (or any other key)
+cp backend/.env.example .env   # fill in at least one LLM key
 uvicorn app.main:app --reload --port 8000
 ```
 API available at http://localhost:8000. Docs at http://localhost:8000/docs.
 
-### 2 — Frontend (React)
+### 4 — React Frontend (Proof-of-Concept)
 ```bash
 cd frontend
 npm install
@@ -73,25 +94,10 @@ npm run dev
 ```
 UI available at http://localhost:5173 (proxies `/api` to backend :8000).
 
-### 3 — n8n (workflow option)
-```bash
-n8n import:workflow --input=n8n/workflow.json
-n8n start
-```
-Open http://localhost:5678, configure Anthropic API key credential, activate workflow.
-
-### 4 — Tests
+### 5 — Tests
 ```bash
 cd backend
 pytest
-```
-
-### 5 — CLI runner (generates assessment output file)
-```bash
-pip install anthropic python-dotenv
-cp .env.example .env
-python backend/scripts/run_pipeline.py
-python backend/scripts/validate_outputs.py
 ```
 
 ---
@@ -124,10 +130,10 @@ Inbound Message (webhook / folder watch / form)
         └──► Routes to escalation_queue instead of standard destination
 ```
 
-**State held at:** `data/outputs/processed_records.json` (append-mode per run)
-**Orchestration:** n8n (self-hosted or cloud free tier) — see `workflow/n8n_workflow.json`
-**LLM:** Anthropic API (`claude-sonnet-4-6` — formerly referenced as `claude-sonnet-4-20250514`, update if running fresh) via HTTP node in n8n
-**Trigger:** Webhook node (POST to `/webhook/arcvault-intake`)
+**State:** Held in n8n execution context per run. JSON output written by CLI runner to `data/outputs/processed_records.json`.
+**Orchestration:** n8n (self-hosted) — `n8n/workflow.json`
+**LLM:** Anthropic API (`claude-sonnet-4-6`) via HTTP Request nodes in n8n; same model used by CLI runner and FastAPI backend.
+**Trigger:** HTTP webhook (POST to `/webhook/arcvault-intake`) — swap to watched folder, Gmail trigger, or form node without changing downstream logic.
 
 ---
 
@@ -152,20 +158,17 @@ Escalation override keywords (checked before routing):
 
 ## File Structure
 
-> See the **Monorepo Structure** section above for the full current layout.
-> The `workflow/` and `demo/` directories were removed in Session 3.
-> Workflow is now at `n8n/workflow.json`. Demo is a live web app at `frontend/`.
-
 Key locations:
-- `n8n/workflow.json` — importable n8n workflow
-- `n8n/README.md` — full n8n setup, credential config, demo script
-- `backend/README.md` — FastAPI setup, all API endpoints, tests
-- `frontend/README.md` — React setup, component guide, SSE explanation
-- `docs/architecture.md` — full write-up covering all 3 system options
-- `data/sample_inputs.json` — 5 test messages from assessment
-- `data/outputs/` — generated on first run (gitignored): JSON + Excel
-- `backend/scripts/run_pipeline.py` — standalone CLI runner (Anthropic SDK only, no FastAPI needed)
+- `n8n/workflow.json` — importable n8n workflow (primary assessment deliverable)
+- `n8n/README.md` — full n8n setup, credential config, all 5 curl commands, demo script
+- `backend/scripts/run_pipeline.py` — CLI verification runner (Anthropic SDK, no frameworks)
 - `backend/scripts/validate_outputs.py` — validates output JSON schema for submission
+- `backend/README.md` — FastAPI proof-of-concept: setup, API endpoints, tests
+- `frontend/README.md` — React proof-of-concept: setup, component guide, SSE explanation
+- `docs/architecture.md` — full write-up: system design, routing, escalation, prod scale, Phase 2
+- `data/sample_inputs.json` — 5 test messages from assessment
+- `data/outputs/` — generated on CLI run (gitignored): `processed_records.json` + `.xlsx`
+- `prompts/` — all 3 LLM prompt docs with rationale paragraphs
 
 ---
 
@@ -254,44 +257,55 @@ Re-add `.github/` only if the repo is pushed to GitHub and CI is actually desire
 - **Tailwind + manual components** (not shadcn/ui CLI): avoids CLI dependency, full control, same quality output
 - **openpyxl** for Excel: row-level formatting (escalated rows highlighted in amber), frozen header, column widths auto-set
 
----
+### Session 7 — n8n Workflow Overhaul: Groq + Dual Outputs + JSON Schema Enforcement (May 2026)
+- Switched LLM from Anthropic `claude-sonnet-4-6` to Groq `llama-3.3-70b-versatile` (free tier, OpenAI-compatible)
+- Added `response_format: { type: "json_object" }` to Steps 2 and 3 — JSON now enforced at API level, not just in prompt
+- Added parallel output branches from Assemble Final Record: Webhook.site POST + Google Sheets row append
+- Rewrote all 3 HTTP Request node bodies to use `specifyBody: "json"` with proper Groq request format
+- Added Groq API credential setup instructions to `n8n/README.md` (HTTP Header Auth: `Authorization: Bearer gsk_...`)
+- Added Google Sheets credential + column mapping instructions to `n8n/README.md`
+- Added Webhook.site setup instructions to `n8n/README.md`
+- Updated `.env.example` with `WEBHOOK_SITE_URL` and `GOOGLE_SHEET_ID`
+- Updated `docs/architecture.md`: diagram reflects dual outputs, Groq model, JSON enforcement rationale
+- Updated cost section: Groq free tier at assessment scale, $0.0006/msg at production vs $0.006/msg for Sonnet
+- Reframed framing across all docs: n8n = primary, CLI = verification, web app = proof-of-concept
 
-## Known Bugs & Blockers
-
-### Bug 1 — `run_pipeline.py` KeyError crash (MUST FIX before running)
-**File:** `scripts/run_pipeline.py` line 245
-**Problem:** `msg["timestamp"]` but `data/sample_inputs.json` has no `timestamp` field — pipeline crashes immediately.
-**Fix:** Change line 245 to:
-```python
-"timestamp": msg.get("timestamp", datetime.utcnow().isoformat() + "Z"),
-```
-
-### Bug 2 — Output file missing (MUST FIX for submission)
-**Problem:** `data/outputs/processed_records.json` does not exist. The pipeline has never been executed.
-**Fix:** After fixing Bug 1, run:
-```bash
-python scripts/run_pipeline.py
-```
-
-### Bug 3 — Outdated model ID
-**Problem:** `claude-sonnet-4-20250514` is the old model ID format. Current ID is `claude-sonnet-4-6`.
-**Affected files:** `scripts/run_pipeline.py` (line 14), `workflow/n8n_workflow.json` (multiple nodes), `docs/architecture.md` (line 18).
-**Fix:** Update model string in all three files before running.
-
-### Blocker 4 — No demo recording
-**Problem:** `demo/loom_link.md` contains a placeholder. Assessment requires Loom OR screenshots OR live demo.
-**Fix:** Either record a Loom walkthrough (5–8 min) OR add screenshots of n8n step outputs to `workflow/screenshots/`.
+**Key decisions:**
+- Groq over Anthropic for the n8n workflow: free tier removes the biggest setup barrier for evaluators; `response_format` support is the key capability needed
+- `response_format: json_object` for Steps 2+3: eliminates the #1 integration failure mode (LLM wraps JSON in markdown or adds preamble) without any prompt workarounds. Step 5 (summary) intentionally does NOT use it — summary is plain text, not JSON
+- Dual outputs (Webhook.site + Google Sheets): assessment explicitly accepts both; running both simultaneously shows completeness
+- Google Sheets node uses `defineBelow` column mapping with explicit schema — every field is named, typed, and mapped. No guesswork for the evaluator
 
 ---
 
 ## Pre-Submission Checklist
 
+**Fixed in earlier sessions:**
 - [x] Fix `run_pipeline.py` timestamp KeyError — fixed Session 3
 - [x] Update model ID to `claude-sonnet-4-6` — fixed Session 3
+- [x] Reframe n8n as primary, CLI as verification, web app as production proof-of-concept — Session 6
+- [x] Switch LLM to Groq `llama-3.3-70b-versatile` (free tier) — Session 7
+- [x] Add `response_format: json_object` to Steps 2 + 3 (JSON enforced at API level) — Session 7
+- [x] Add parallel output branches: Webhook.site + Google Sheets — Session 7
+- [x] Update n8n/README.md: Groq credential setup, Google Sheets setup, Webhook.site setup — Session 7
+
+**Still required before submitting:**
+- [ ] Get free Groq API key at console.groq.com → add as "Groq API" HTTP Header Auth credential in n8n
+- [ ] Apply Groq API credential to Steps 2, 3, 5 nodes in n8n
+- [ ] Set up Webhook.site URL → update Output: Webhook.site node URL
+- [ ] Set up Google Sheet with 14 column headers → add Google Sheets OAuth2 credential → configure Output: Google Sheets node
+- [ ] Activate the workflow → send all 5 curl commands → confirm each returns correct structured JSON
+- [ ] Verify records appear in Webhook.site and Google Sheet
 - [ ] Run `python backend/scripts/run_pipeline.py` to generate `data/outputs/processed_records.json`
-- [ ] Run `python backend/scripts/validate_outputs.py` to confirm all 5 records pass
-- [ ] Start backend + frontend and do a live test run
-- [ ] Record Loom demo (5–8 min walkthrough of web app + n8n)
+- [ ] Run `python backend/scripts/validate_outputs.py` to confirm all 5 records pass schema validation
+- [ ] Record Loom demo: canvas walkthrough + 2 curl calls showing execution log + Webhook.site + Sheets (5–8 min)
+
+**Deliverables checklist (per assessment Section 4):**
+- [x] 4.1 Working workflow — `n8n/workflow.json` (exportable + importable)
+- [ ] 4.1 Demo recording — Loom or screenshots of n8n execution steps
+- [ ] 4.2 Structured output file — `data/outputs/processed_records.json` (run CLI to generate)
+- [x] 4.3 Prompt documentation — `prompts/classification_prompt.md`, `prompts/enrichment_prompt.md`, `prompts/summary_prompt.md`
+- [x] 4.4 Architecture write-up — `docs/architecture.md`
 
 ---
 
@@ -323,22 +337,27 @@ See `.env.example` for all required vars. Key ones:
 
 ## Running the Pipeline
 
-### Option A — n8n (recommended for demo)
-1. Import `workflow/n8n_workflow.json` into your n8n instance
-2. Set credentials: Anthropic API key in n8n credentials manager
-3. Activate the workflow
-4. POST to the webhook URL with a message body (see `data/sample_inputs.json` for format)
+### Option 1 — n8n (primary)
+1. `n8n import:workflow --input=n8n/workflow.json`
+2. `n8n start` → open http://localhost:5678
+3. Add Anthropic API key credential (see `n8n/README.md` Step 3)
+4. Activate workflow → POST to `http://localhost:5678/webhook/arcvault-intake`
+5. Full curl commands and demo script in `n8n/README.md`
 
-### Option B — Python runner
+### Option 2 — Python CLI (verification)
 ```bash
+cp backend/.env.example .env   # fill in GROQ_API_KEY or ANTHROPIC_API_KEY
 pip install anthropic python-dotenv
-cp .env.example .env
-# Add your ANTHROPIC_API_KEY to .env
-python scripts/run_pipeline.py
-# Processes all 5 sample inputs and writes to data/outputs/processed_records.json
+python backend/scripts/run_pipeline.py        # generates data/outputs/processed_records.json
+python backend/scripts/validate_outputs.py   # validates schema for submission
 ```
 
-### Validate outputs
+### Option 3 — Web app (proof-of-concept)
 ```bash
-python scripts/validate_outputs.py
+# Terminal 1
+cd backend && python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && uvicorn app.main:app --reload --port 8000
+# Terminal 2
+cd frontend && npm install && npm run dev
+# Open http://localhost:5173
 ```

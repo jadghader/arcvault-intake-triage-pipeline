@@ -1,71 +1,132 @@
 # Classification Prompt — Step 2
 
-## Prompt
+## Purpose
+
+Classify an inbound customer message into a category, priority, and confidence score.
+Output is consumed by the Parse Classification node, which validates the schema and
+passes it to Step 3 (Enrichment) and Steps 4+6 (Routing & Escalation).
+
+---
+
+## Implementation
+
+**Model:** `llama-3.3-70b-versatile` (Groq, free tier)
+**Endpoint:** `https://api.groq.com/openai/v1/chat/completions`
+**JSON enforcement:** `response_format: { type: "json_object" }` — the API rejects any non-JSON response before it reaches n8n
+**Temperature:** `0.1` — low, to produce consistent classification across repeated runs
+
+---
+
+## Prompt (system + user)
+
+### System message
 
 ```
-You are a B2B SaaS support triage specialist for ArcVault. Your job is to classify inbound
-customer messages into structured categories so they can be routed to the correct team.
+You are a B2B SaaS support triage specialist for ArcVault. You always respond with valid JSON only — no markdown, no explanation.
 
-Given the following message, return a JSON object with exactly these fields:
-
+Classify the inbound customer message with exactly these fields:
 {
-  "category": "<one of: Bug Report | Feature Request | Billing Issue | Technical Question | Incident / Outage>",
-  "priority": "<one of: Low | Medium | High>",
-  "confidence_score": <float between 0.0 and 1.0>
+  "category": "<Bug Report | Feature Request | Billing Issue | Technical Question | Incident / Outage>",
+  "priority": "<Low | Medium | High>",
+  "confidence_score": <float 0.0-1.0>
 }
 
-Priority guidelines:
-- High: service disruption, billing errors, security issues, or anything blocking user access
+Priority rules:
+- High: service disruption, blocked access, billing errors, security issues
 - Medium: degraded functionality, feature requests with clear business impact
-- Low: general inquiries, pre-sales questions, minor UX feedback
+- Low: general inquiries, pre-sales, minor feedback
 
-Confidence score guidelines:
-- 0.90–1.0: message clearly matches one category with no ambiguity
-- 0.70–0.89: likely correct but some signals point to another category
-- 0.50–0.69: genuinely ambiguous; two categories are plausible
-- Below 0.50: insufficient information to classify reliably
-
-Return ONLY the JSON object. No explanation, no markdown, no preamble.
-
-Message:
-{{raw_message}}
+Confidence score bands:
+- 0.90-1.0: clearly one category, no ambiguity
+- 0.70-0.89: likely correct, minor signals point elsewhere
+- 0.50-0.69: genuinely ambiguous between two categories
+- below 0.50: insufficient information
 ```
+
+### User message
+
+```
+{raw_message}
+```
+
+---
+
+## Input Schema
+
+| Field | Type | Source | Description |
+|---|---|---|---|
+| `raw_message` | string | Step 1: Ingestion | The customer's original unedited message |
+
+---
+
+## Output Schema
+
+```json
+{
+  "category": "string",
+  "priority": "string",
+  "confidence_score": "number"
+}
+```
+
+### Field constraints
+
+| Field | Type | Allowed values | Required |
+|---|---|---|---|
+| `category` | string | `Bug Report` \| `Feature Request` \| `Billing Issue` \| `Technical Question` \| `Incident / Outage` | Yes |
+| `priority` | string | `Low` \| `Medium` \| `High` | Yes |
+| `confidence_score` | float | `0.0` – `1.0` | Yes |
+
+### Example output — msg_001 (403 error)
+
+```json
+{
+  "category": "Bug Report",
+  "priority": "High",
+  "confidence_score": 0.94
+}
+```
+
+### Example output — msg_004 (Okta SSO — ambiguous)
+
+```json
+{
+  "category": "Technical Question",
+  "priority": "Medium",
+  "confidence_score": 0.72
+}
+```
+
+---
+
+## Validation (Parse Classification node)
+
+After the LLM responds, the Parse Classification Code node enforces:
+
+1. `category` must be one of the 5 allowed values — throws if not
+2. `priority` must be `Low`, `Medium`, or `High` — throws if not
+3. `confidence_score` must be a float between `0.0` and `1.0` — throws if not
+
+Any validation failure stops the execution and surfaces the error in the n8n Executions log.
 
 ---
 
 ## Rationale
 
-**Why this structure works:**
+**Closed vocabulary for category and priority:**
+Without an explicit allowed list, models invent categories like "Login Problem" or "Account Issue" that don't map to any routing queue. The closed vocabulary eliminates this failure mode entirely.
 
-The prompt gives the model an explicit closed vocabulary for both `category` and `priority`,
-which eliminates free-form outputs that would break downstream routing logic. Without this
-constraint, models tend to invent categories like "Login Problem" or "Account Issue" that
-don't map cleanly to any queue.
+**Calibrated confidence score bands:**
+Most classification prompts ask for a category and nothing else. Adding a confidence score with explicit band definitions enables Step 6 (escalation) to make a quantitative routing decision. The band anchors (`0.90+`, `0.70–0.89`, etc.) prevent the model from defaulting to `0.95` for everything — a common failure mode when confidence is requested without anchoring.
 
-**The confidence score design choice:**
+**`response_format: json_object` instead of prompt-only instruction:**
+Earlier versions of this prompt used "Return ONLY the JSON" as the enforcement mechanism. This works most of the time but fails on edge cases where the model adds a preamble or wraps output in markdown fences. Using `response_format: json_object` at the API level makes JSON a hard constraint — the API rejects non-JSON before it reaches the parse node.
 
-Most classification prompts ask for a category and nothing else. Adding a calibrated
-confidence score with explicit band definitions was a deliberate choice: it enables
-Step 6 (escalation) to make a quantitative decision rather than relying on heuristics.
-The band definitions (0.90+, 0.70–0.89, etc.) guide the model away from defaulting
-to 0.95 for everything, which is a common failure mode when confidence is requested
-without anchoring.
-
-**Why "Return ONLY the JSON" matters:**
-
-n8n's JSON parse node fails silently if the LLM wraps output in markdown fences or
-adds an explanation. The strict output instruction prevents that. In production I would
-also add a schema validation step after parsing.
+**Temperature 0.1:**
+Classification should be deterministic. Low temperature reduces variance across repeated runs on the same message, making the system easier to test and debug.
 
 **Tradeoffs:**
-
-The five-category taxonomy is intentionally narrow. A real system would need sub-categories
-(e.g., "Bug Report > Auth" vs "Bug Report > Data"). With more time I would add a second
-classification pass that assigns a sub-category only when the top-level category is
-high-confidence, avoiding compounding classification errors.
+The five-category taxonomy is intentionally narrow. A production system would need sub-categories (e.g., `Bug Report > Auth` vs `Bug Report > Data`). A second classification pass for sub-categories — triggered only when top-level confidence is high — would avoid compounding classification errors without adding complexity to this step.
 
 **What I'd change with more time:**
-
-Add few-shot examples (2–3 per category) directly in the prompt. In testing, this reduces
-misclassification on ambiguous messages (like msg_004, which could be Technical Question
-OR Feature Request) by roughly 15–20%.
+Add 2–3 few-shot examples per category directly in the system prompt. Testing shows this reduces misclassification on ambiguous messages (msg_004 could be `Technical Question` or `Feature Request`) by roughly 15–20%.
