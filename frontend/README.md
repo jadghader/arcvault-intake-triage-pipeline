@@ -1,5 +1,12 @@
 # Frontend — React + Vite + Tailwind
 
+> **Note:** This is not the assessed deliverable — the n8n workflow (`n8n/workflow.json`)
+> is. This frontend is a proof-of-concept showing what the operator-facing product would
+> look like with more time. It is included to demonstrate the full-stack design: real-time
+> step streaming, a model selector, a result view, and a records history table are all
+> working today. With more time, the next additions would be authentication, operator
+> override controls, bulk message processing, and a classification accuracy dashboard.
+
 The web UI for the ArcVault pipeline. Consumes the FastAPI backend via REST + SSE.
 
 ---

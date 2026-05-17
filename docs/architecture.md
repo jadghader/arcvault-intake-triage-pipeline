@@ -65,10 +65,24 @@ Server-Sent Events for real-time step-by-step streaming. The frontend provides a
 selector, live step cards, a results view, and a records table with Excel export.
 
 This is not part of the n8n workflow submission — it is included to show how the
-architecture scales. In production, the web app becomes the internal tool operators use
-to re-run, inspect, and override pipeline decisions, replacing the raw webhook interface.
-The n8n workflow and the FastAPI backend run identical prompts and produce identical
-structured output; only the delivery mechanism differs.
+architecture scales and what I would continue building with more time. The n8n workflow
+and the FastAPI backend run identical prompts and produce identical structured output;
+only the delivery mechanism differs.
+
+**What is working today:** the full six-step pipeline runs end-to-end via the web app,
+SSE streaming shows each step completing in real time, multi-model support lets you
+swap between Groq, Anthropic, OpenAI, and Mistral from a dropdown, and all records are
+persisted to JSON and Excel with escalated rows highlighted.
+
+**What I would build out with more time:** this proof-of-concept would become the primary
+operator interface replacing the raw webhook. Concretely: authentication and per-user
+session history, the ability for operators to override a routing or escalation decision
+and feed that correction back into the confidence threshold, bulk processing of message
+queues rather than one-at-a-time submission, a dashboard showing classification accuracy
+and escalation rates over time, and Slack/email notifications pushed to queue owners when
+a HIGH or escalated record arrives. The architecture already supports all of these — the
+SSE streaming, the records store, and the multi-model routing are the foundations those
+features build on.
 
 ---
 

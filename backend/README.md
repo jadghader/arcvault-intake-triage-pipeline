@@ -1,11 +1,15 @@
 # Backend — FastAPI + OpenAI Agents SDK
 
-The Python backend for the ArcVault pipeline web app (proof-of-concept).
-Exposes a REST API that the React frontend consumes.
+> **Note:** This is not the assessed deliverable — the n8n workflow (`n8n/workflow.json`)
+> is. This backend is a proof-of-concept showing how the same pipeline design scales to a
+> production operator tool. It is included to demonstrate what I would continue building
+> with more time: the full six-step pipeline runs here via FastAPI + OpenAI Agents SDK,
+> with SSE streaming, multi-model support, and persistent storage — the foundations for
+> authentication, operator overrides, bulk processing, and a classification dashboard,
+> which are the next things I would build.
 
-> **Scope:** This is not a production service — it is a proof-of-concept showing how the
-> n8n workflow design scales to a full-stack operator tool. The same six-step pipeline
-> logic runs here, orchestrated by the OpenAI Agents SDK instead of n8n.
+The Python backend exposes a REST API that the React frontend consumes. The same six-step
+pipeline logic runs here, orchestrated by the OpenAI Agents SDK instead of n8n.
 
 ---
 

@@ -47,22 +47,33 @@ python backend/scripts/run_pipeline.py        # processes all 5 sample inputs
 python backend/scripts/validate_outputs.py   # confirms output schema is correct
 ```
 
-→ Output written to `data/outputs/processed_records.json` (gitignored — run to generate).
+→ Output written to `data/outputs/processed_records.json` (gitignored — generated locally, not committed).
 
 ---
 
-## Option 3 — Web App (Production Proof-of-Concept)
+## Option 3 — Web App (Proof-of-Concept / If I Had More Time)
 
-FastAPI backend + React frontend demonstrating what this pipeline looks like as a
-production internal tool. Not the primary assessment deliverable — included to show
-how the n8n workflow design translates to a scalable, operator-facing product.
+FastAPI backend + React frontend showing what this pipeline looks like as a production
+operator tool. This is **not the assessed deliverable** — the n8n workflow is. It is
+included to show how the architecture would scale beyond a workflow tool, and to
+demonstrate what I would continue building with more time.
+
+**What works today:** the full six-step pipeline runs end-to-end, SSE streaming shows
+each step completing in real time, a model dropdown lets you swap between Groq,
+Anthropic, OpenAI, and Mistral, and all records are persisted to JSON and Excel with
+escalated rows highlighted.
+
+**What I would add with more time:** operator authentication, override controls so a
+reviewer can correct a routing decision and feed it back as a training signal, bulk
+message processing, a classification accuracy dashboard, and Slack/email notifications
+to queue owners on HIGH or escalated records.
 
 ```bash
 # Terminal 1 — backend
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp backend/.env.example .env   # fill in at least one LLM key
+cp .env.example .env   # fill in at least one LLM key
 uvicorn app.main:app --reload --port 8000
 
 # Terminal 2 — frontend
@@ -208,7 +219,9 @@ Each processed message produces a flat JSON record with 15 fields. Two of the fi
 }
 ```
 
-→ Full output for all 5 messages: `data/outputs/processed_records.json` (run CLI to generate)
+→ Full output for all 5 messages is written to two places:
+- **Google Sheets** — appended live by the n8n workflow on every execution (primary persistent output, visible during the Loom demo)
+- **`data/outputs/processed_records.json`** — generated locally by the CLI; gitignored, run `python backend/scripts/run_pipeline.py` to produce it
 
 ---
 
@@ -218,7 +231,7 @@ Each processed message produces a flat JSON record with 15 fields. Two of the fi
 |---|---|
 | Working workflow (n8n JSON) | `n8n/workflow.json` |
 | n8n setup + demo guide | `n8n/README.md` |
-| Structured output (5 inputs) | `data/outputs/processed_records.json` *(run CLI to generate)* |
+| Structured output (5 inputs) | Google Sheets (live, via n8n) + `data/outputs/processed_records.json` *(run CLI to generate locally)* |
 | Classification prompt + rationale | `prompts/classification_prompt.md` |
 | Enrichment prompt + rationale | `prompts/enrichment_prompt.md` |
 | Summary prompt + rationale | `prompts/summary_prompt.md` |

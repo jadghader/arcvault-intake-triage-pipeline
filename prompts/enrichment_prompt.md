@@ -1,23 +1,6 @@
 # Enrichment Prompt — Step 3
 
-## Purpose
-
-Extract structured entities from the raw message to give the receiving team everything
-they need to act immediately — without reading the original message. Output feeds directly
-into Steps 4+6 (Routing & Escalation) and Step 5 (Summary).
-
----
-
-## Implementation
-
-**Model:** `llama-3.3-70b-versatile` (Groq, free tier)
-**Endpoint:** `https://api.groq.com/openai/v1/chat/completions`
-**JSON enforcement:** `response_format: { type: "json_object" }` — valid JSON guaranteed at API level
-**Temperature:** `0.1` — low, for consistent entity extraction across runs
-
----
-
-## Prompt (system + user)
+## Prompt
 
 ### System message
 
@@ -56,13 +39,14 @@ Message:
 
 ---
 
-## Input Schema
+## Configuration
 
-| Field | Type | Source | Description |
-|---|---|---|---|
-| `category` | string | Step 2 output | Classification category — used to guide which identifiers to prioritise |
-| `priority` | string | Step 2 output | Classification priority |
-| `raw_message` | string | Step 1 output | Original customer message |
+| Setting | Value |
+|---|---|
+| Model | `llama-3.3-70b-versatile` (Groq, free tier) |
+| Endpoint | `https://api.groq.com/openai/v1/chat/completions` |
+| JSON enforcement | `response_format: { type: "json_object" }` |
+| Temperature | `0.1` |
 
 ---
 
@@ -70,36 +54,28 @@ Message:
 
 ```json
 {
-  "core_issue": "string",
+  "core_issue": "string — one sentence describing the actual problem or request",
   "identifiers": {
-    "<key>": "string"
+    "key": "value — only keys from the allowed vocabulary, only values present in the message"
   },
-  "urgency_signal": "string"
+  "urgency_signal": "string — one sentence grounded in message content"
 }
 ```
 
-### Field constraints
+**Allowed identifier keys:**
 
-| Field | Type | Constraints | Required |
-|---|---|---|---|
-| `core_issue` | string | One sentence. Must describe the actual problem or request, not restate the category. | Yes |
-| `identifiers` | object | Dynamic key-value pairs. Only keys from the allowed vocabulary. Only values present in the message. Empty object `{}` if none found. | Yes |
-| `urgency_signal` | string | One sentence. Must be grounded in message content — not a generic statement. | Yes |
-
-### Allowed identifier keys
-
-| Key | When to use |
+| Key | When to extract |
 |---|---|
 | `account_id` | User or account identifier mentioned in the message |
 | `invoice_number` | Invoice or order number |
 | `error_code` | HTTP status code, error code, or error name |
-| `affected_component` | Product feature or system component that is broken/slow |
+| `affected_component` | Product feature or system that is broken or slow |
 | `feature_requested` | Name of the feature the customer is asking for |
 | `integration_requested` | Third-party tool the customer wants to integrate |
 | `incident_start` | Time or date the issue began |
 | `billed_amount` | Dollar amount the customer was charged |
 | `contracted_rate` | Dollar amount the customer's contract specifies |
-| `discrepancy` | Difference between billed and contracted amount — used by escalation rule |
+| `discrepancy` | Numeric difference between billed and contracted amount — drives the billing escalation rule |
 | `trigger_event` | Event that caused the issue (e.g., a recent platform update) |
 | `scope` | How many users or accounts are affected |
 | `use_case` | What the customer is trying to accomplish |
@@ -107,7 +83,7 @@ Message:
 
 ---
 
-## Example outputs
+## Example Outputs
 
 ### msg_001 — Bug Report (403 error)
 
@@ -130,55 +106,42 @@ Message:
   "core_issue": "Customer was charged $1,240 but their contracted monthly rate is $980, resulting in a $260 overcharge.",
   "identifiers": {
     "invoice_number": "8821",
-    "billed_amount": "$1,240",
-    "contracted_rate": "$980/month",
-    "discrepancy": "$260"
+    "billed_amount": "1240",
+    "contracted_rate": "980",
+    "discrepancy": "260"
   },
   "urgency_signal": "A confirmed billing discrepancy of $260 exists on a specific invoice — customer has already identified the exact amount."
 }
 ```
 
-### msg_002 — Feature Request (no identifiers)
+### msg_005 — Incident / Outage (dashboard down)
 
 ```json
 {
-  "core_issue": "Customer wants a bulk export feature for audit logs to save time on compliance workflows.",
+  "core_issue": "The ArcVault dashboard stopped loading at 2pm EST and multiple users are currently affected.",
   "identifiers": {
-    "feature_requested": "bulk export for audit logs",
-    "use_case": "compliance reporting"
+    "affected_component": "dashboard",
+    "incident_start": "2pm EST",
+    "scope": "multiple users affected"
   },
-  "urgency_signal": "Not urgent — this is a feature request with no active service disruption."
+  "urgency_signal": "Active service outage affecting multiple users with no resolution — customer has already ruled out issues on their end."
 }
 ```
 
 ---
 
-## Validation (Steps 4+6: Routing & Escalation node)
+## Why I Structured It This Way
 
-After the LLM responds, the Routing & Escalation Code node enforces:
+The enrichment step has one job: give the receiving team everything they need to act on the ticket without reading the original message. The design decisions all serve that goal.
 
-1. `identifiers` must be an object — reset to `{}` if missing or wrong type
-2. `discrepancy` value is parsed as a float (strips `$` and `,`) for the billing escalation rule
-3. All three fields must be present — parse error thrown if missing
+**Passing classification context into the user message.** The category and priority from Step 2 are included in the user message so the model knows which identifiers matter most. A `Billing Issue` should surface `invoice_number` and `discrepancy`; an `Incident / Outage` should surface `affected_component` and `incident_start`. Without this context, the model extracts whatever looks interesting rather than what is actionable for the specific receiving team. This is also why enrichment is a separate step from classification — by the time enrichment runs, the category decision has already been made and can be used as guidance.
 
----
+**Dynamic identifiers object instead of a fixed schema.** Messages vary widely — some have invoice numbers, some have error codes, some have neither. A fixed schema with nullable fields produces records full of `null` values that add noise without information. A dynamic key-value object with a controlled vocabulary produces only what is actually present in the message, keeping output clean. The controlled vocabulary (14 allowed keys) prevents the model from inventing freeform keys while still covering the realistic range of B2B support message types.
 
-## Rationale
+**"Do not invent values" instruction.** Without this explicit constraint, models hallucinate plausible-looking values — filling `account_id: "unknown"` when no account ID is mentioned, or inventing an error code. The instruction keeps all extracted values strictly grounded in the message text. The one deliberate exception is `discrepancy`: the model is allowed — and instructed — to calculate it from `billed_amount` minus `contracted_rate` when both are stated. This is the only derived value, and it exists because the billing escalation rule in Step 4+6 needs a numeric amount to compare against the $200 threshold.
 
-**Passing classification context into the enrichment prompt:**
-The category tells the model which identifiers matter most. A `Billing Issue` message should surface `invoice_number` and `discrepancy`; an `Incident / Outage` should surface `affected_component` and `incident_start`. Without the category context, the model extracts whatever looks interesting rather than what the receiving team actually needs.
+**`response_format: json_object` at the API level.** Same reasoning as Step 2 — hard JSON enforcement at the API removes the need for markdown-stripping or fallback logic in the downstream parse node. The Groq endpoint rejects non-compliant responses before they reach n8n.
 
-**Dynamic identifiers object instead of fixed schema:**
-Messages vary widely — some have invoice numbers, some have error codes, some have neither. A fixed schema with nullable fields produces records full of `null` values. A dynamic key-value object with a controlled vocabulary produces only what is actually present, keeping output clean and actionable.
+**Tradeoffs.** The single-sentence `core_issue` constraint forces useful compression but loses nuance when a message describes multiple issues. A `secondary_issue` field would handle this in production. The dynamic identifiers approach also means there is no guarantee a specific key is present — downstream code must always use safe access (`identifiers?.discrepancy`) rather than assuming the key exists.
 
-**"Do not invent values" instruction:**
-Without this, models hallucinate plausible-looking values — inventing `account_id: "unknown"` or calculating `discrepancy: "$260"` by doing arithmetic on values in the message. The explicit instruction keeps output strictly grounded. The `discrepancy` calculation is the one borderline case: the model is allowed to compute it because it is directly derivable from values stated in the message, and it is needed for the billing escalation rule.
-
-**`response_format: json_object` at the API level:**
-Same reasoning as Step 2 — hard JSON enforcement at the API removes the need for markdown-stripping fallback logic in the parse node.
-
-**Tradeoffs:**
-The single-sentence `core_issue` constraint forces useful compression but loses nuance on complex messages that describe multiple issues. A `secondary_issue` field would handle this in production. The dynamic identifiers approach also means there is no guarantee a specific key will be present — downstream code must always use safe access (`identifiers?.discrepancy`) rather than assuming a key exists.
-
-**What I'd change with more time:**
-Add entity type detection — distinguish a user ID from an account ID, a charge from a discount. This would enable downstream automation (e.g., auto-querying the billing system for invoice #8821 before the Billing team even opens the ticket).
+**What I'd change with more time.** Add entity type detection to distinguish between similar identifier types — for example, differentiating a user ID from an account ID, or a one-time charge from a recurring rate. This would enable downstream automation: auto-querying the billing system for invoice #8821 before the Billing team even opens the ticket, or pre-populating the account context for the engineering team from the account ID. I'd also add a validation step that checks whether the extracted `discrepancy` value mathematically matches `billed_amount - contracted_rate`, catching cases where the model makes an arithmetic error.

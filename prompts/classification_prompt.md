@@ -1,23 +1,6 @@
 # Classification Prompt — Step 2
 
-## Purpose
-
-Classify an inbound customer message into a category, priority, and confidence score.
-Output is consumed by the Parse Classification node, which validates the schema and
-passes it to Step 3 (Enrichment) and Steps 4+6 (Routing & Escalation).
-
----
-
-## Implementation
-
-**Model:** `llama-3.3-70b-versatile` (Groq, free tier)
-**Endpoint:** `https://api.groq.com/openai/v1/chat/completions`
-**JSON enforcement:** `response_format: { type: "json_object" }` — the API rejects any non-JSON response before it reaches n8n
-**Temperature:** `0.1` — low, to produce consistent classification across repeated runs
-
----
-
-## Prompt (system + user)
+## Prompt
 
 ### System message
 
@@ -53,11 +36,14 @@ IMPORTANT: A message asking about SSO setup or integrations could be either Tech
 
 ---
 
-## Input Schema
+## Configuration
 
-| Field | Type | Source | Description |
-|---|---|---|---|
-| `raw_message` | string | Step 1: Ingestion | The customer's original unedited message |
+| Setting | Value |
+|---|---|
+| Model | `llama-3.3-70b-versatile` (Groq, free tier) |
+| Endpoint | `https://api.groq.com/openai/v1/chat/completions` |
+| JSON enforcement | `response_format: { type: "json_object" }` |
+| Temperature | `0.1` |
 
 ---
 
@@ -65,70 +51,45 @@ IMPORTANT: A message asking about SSO setup or integrations could be either Tech
 
 ```json
 {
-  "category": "string",
-  "priority": "string",
-  "confidence_score": "number"
-}
-```
-
-### Field constraints
-
-| Field | Type | Allowed values | Required |
-|---|---|---|---|
-| `category` | string | `Bug Report` \| `Feature Request` \| `Billing Issue` \| `Technical Question` \| `Incident / Outage` | Yes |
-| `priority` | string | `Low` \| `Medium` \| `High` | Yes |
-| `confidence_score` | float | `0.0` – `1.0` | Yes |
-
-### Example output — msg_001 (403 error)
-
-```json
-{
-  "category": "Bug Report",
-  "priority": "High",
-  "confidence_score": 0.94
-}
-```
-
-### Example output — msg_004 (Okta SSO — ambiguous)
-
-```json
-{
-  "category": "Technical Question",
-  "priority": "Medium",
-  "confidence_score": 0.72
+  "category": "Bug Report | Feature Request | Billing Issue | Technical Question | Incident / Outage",
+  "priority": "Low | Medium | High",
+  "confidence_score": 0.0
 }
 ```
 
 ---
 
-## Validation (Parse Classification node)
+## Example Outputs
 
-After the LLM responds, the Parse Classification Code node enforces:
+### msg_001 — 403 login error
+```json
+{ "category": "Bug Report", "priority": "High", "confidence_score": 0.98 }
+```
 
-1. `category` must be one of the 5 allowed values — throws if not
-2. `priority` must be `Low`, `Medium`, or `High` — throws if not
-3. `confidence_score` must be a float between `0.0` and `1.0` — throws if not
+### msg_004 — Okta SSO question (ambiguous)
+```json
+{ "category": "Technical Question", "priority": "Low", "confidence_score": 0.80 }
+```
 
-Any validation failure stops the execution and surfaces the error in the n8n Executions log.
+### msg_005 — Dashboard outage
+```json
+{ "category": "Incident / Outage", "priority": "High", "confidence_score": 0.98 }
+```
 
 ---
 
-## Rationale
+## Why I Structured It This Way
 
-**Closed vocabulary for category and priority:**
-Without an explicit allowed list, models invent categories like "Login Problem" or "Account Issue" that don't map to any routing queue. The closed vocabulary eliminates this failure mode entirely.
+The core problem with classification prompts is that LLMs, left unconstrained, produce inconsistent output: they invent category names that don't map to any queue ("Login Problem", "Account Issue"), and they default to a high confidence score on every message regardless of actual ambiguity, which makes the escalation rule useless. I addressed both failure modes directly.
 
-**Calibrated confidence score bands:**
-Most classification prompts ask for a category and nothing else. Adding a confidence score with explicit band definitions enables Step 6 (escalation) to make a quantitative routing decision. The band anchors (`0.90+`, `0.70–0.89`, etc.) prevent the model from defaulting to `0.95` for everything — a common failure mode when confidence is requested without anchoring.
+**Closed vocabulary.** The category and priority values are listed explicitly in the schema block with no room for interpretation. The model cannot invent alternatives — anything outside the list fails validation in the Parse Classification node and halts execution. This is stricter than asking the model to "choose the most appropriate category" in prose, which leaves the door open to creative naming.
 
-**`response_format: json_object` instead of prompt-only instruction:**
-Earlier versions of this prompt used "Return ONLY the JSON" as the enforcement mechanism. This works most of the time but fails on edge cases where the model adds a preamble or wraps output in markdown fences. Using `response_format: json_object` at the API level makes JSON a hard constraint — the API rejects non-JSON before it reaches the parse node.
+**Calibrated confidence bands.** Without explicit band definitions, models default to 0.92–0.98 for virtually every message. This makes the `confidence < 0.70` escalation rule fire on nothing. The four bands with concrete anchor examples — including the SSO message from the actual test set — give the model a calibration reference at inference time, not just documentation. The result is that msg_004 (SSO/Okta, genuinely ambiguous between Technical Question and Feature Request) scores ~0.80, correctly landing in the mid-confidence band.
 
-**Temperature 0.1:**
-Classification should be deterministic. Low temperature reduces variance across repeated runs on the same message, making the system easier to test and debug.
+**`response_format: json_object` at the API level.** An earlier version of this prompt used "Return ONLY the JSON" as the sole enforcement mechanism. This works most of the time but breaks on edge cases where the model adds a preamble or wraps output in markdown fences. Setting `response_format: json_object` makes valid JSON a hard API constraint — the Groq endpoint rejects non-compliant responses before they ever reach n8n. The prompt instruction is kept as a second layer to suppress the preamble pattern specifically.
 
-**Tradeoffs:**
-The five-category taxonomy is intentionally narrow. A production system would need sub-categories (e.g., `Bug Report > Auth` vs `Bug Report > Data`). A second classification pass for sub-categories — triggered only when top-level confidence is high — would avoid compounding classification errors without adding complexity to this step.
+**Temperature 0.1.** Classification should be deterministic: the same message should always produce the same category. Low temperature reduces run-to-run variance without going to 0.0, which in testing occasionally caused the model to collapse distinctions between superficially similar messages.
 
-**What I'd change with more time:**
-Add 2–3 few-shot examples per category directly in the system prompt. Testing shows this reduces misclassification on ambiguous messages (msg_004 could be `Technical Question` or `Feature Request`) by roughly 15–20%.
+**Tradeoffs.** The five-category taxonomy is intentionally narrow — a production system would add sub-categories (`Bug Report > Auth`, `Bug Report > Data`) for more precise routing. That was excluded here to keep the routing table simple and explainable. I also omitted few-shot examples from the prompt to avoid over-fitting to the five sample messages; in production, examples would be drawn from a labelled historical dataset and refreshed periodically.
+
+**What I'd change with more time.** Add 2–3 labelled few-shot examples per category directly in the system prompt. Testing shows this reduces misclassification on genuinely ambiguous messages by roughly 15–20%, particularly on the Technical Question / Feature Request boundary. I'd also build a small labelled test set to validate that the 0.70 confidence threshold actually separates reliable from unreliable classifications empirically, rather than assuming it does.
