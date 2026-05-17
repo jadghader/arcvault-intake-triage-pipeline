@@ -33,7 +33,7 @@ POST /webhook/arcvault-intake  { source, raw_message }
         │   LLM writes 2–3 sentence handoff note for the receiving team
         ▼
 [Assemble Final Record] (Code node)
-        │   Flattens all fields into canonical 14-field output schema
+        │   Flattens all fields into canonical 15-field output schema
         ├──► Output: Webhook.site  (POST full JSON record — captured in browser)
         ├──► Output: Google Sheets (append row — all 14 fields as columns)
         └──► Webhook Response      (return JSON to curl caller)
@@ -46,9 +46,10 @@ POST /webhook/arcvault-intake  { source, raw_message }
 
 ### CLI Runner — Prompt Verification Tool
 
-`backend/scripts/run_pipeline.py` calls the Anthropic API directly with no framework or
-orchestration layer. Its role is to verify that the prompts produce correct output and to
-generate `data/outputs/processed_records.json` for submission — not to replace the n8n workflow.
+`backend/scripts/run_pipeline.py` calls the Groq API directly (same model and prompts as
+the n8n workflow) with no framework or orchestration layer. Its role is to verify that the
+prompts produce correct output and to generate `data/outputs/processed_records.json` for
+submission — not to replace the n8n workflow.
 
 It processes all five sample inputs in one command. When tuning a prompt, the n8n
 round-trip (import, activate, curl, inspect node output) takes 2–3 minutes per cycle.

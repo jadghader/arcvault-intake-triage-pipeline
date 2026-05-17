@@ -21,7 +21,7 @@ n8n import:workflow --input=n8n/workflow.json
 n8n start
 ```
 
-Open **http://localhost:5678**, add your Anthropic API key credential (one-time setup — see [n8n/README.md](./n8n/README.md)), activate the workflow, then test with:
+Open **http://localhost:5678**, add your Groq API key credential (one-time setup — see [n8n/README.md](./n8n/README.md)), activate the workflow, then test with:
 
 ```bash
 # msg_005 — Incident / Outage → auto-escalated (keyword + category)
@@ -41,8 +41,8 @@ produce the correct structured output and to generate `data/outputs/processed_re
 for submission.
 
 ```bash
-cp backend/.env.example .env  # then fill in GROQ_API_KEY or ANTHROPIC_API_KEY
-pip install anthropic python-dotenv
+cp backend/.env.example .env  # then fill in GROQ_API_KEY
+pip install openai python-dotenv
 python backend/scripts/run_pipeline.py        # processes all 5 sample inputs
 python backend/scripts/validate_outputs.py   # confirms output schema is correct
 ```
@@ -176,6 +176,39 @@ arcvault-intake-triage-pipeline/
 │   └── architecture.md         ← system design write-up
 └── .env.example                ← index: points to n8n/ and backend/ .env.example files
 ```
+
+---
+
+## Sample Output
+
+Each processed message produces a flat JSON record with 15 fields. Two of the five messages escalate:
+
+```json
+{
+  "id": "msg_003",
+  "source": "Support Portal",
+  "timestamp": "2026-05-17T11:11:36.139190Z",
+  "raw_message": "Invoice #8821 shows a charge of $1,240 but our contract rate is $980/month. Can someone look into this?",
+  "category": "Billing Issue",
+  "priority": "High",
+  "confidence_score": 0.98,
+  "core_issue": "The customer is disputing a $260 overcharge on invoice #8821 against their contracted rate.",
+  "identifiers": {
+    "invoice_number": "8821",
+    "billed_amount": "1240",
+    "contracted_rate": "980",
+    "discrepancy": "260"
+  },
+  "urgency_signal": "A confirmed billing discrepancy of $260 exists on a specific invoice — customer has already identified the exact amount.",
+  "destination_queue": "Escalation",
+  "routing_reason": "Billing discrepancy $260 exceeds $200 threshold",
+  "escalation_flag": true,
+  "escalation_reason": "Billing discrepancy $260 exceeds $200 threshold",
+  "summary": "Invoice #8821 shows a $260 overcharge against the customer's contracted rate of $980/month. This record has been escalated for human review due to the billing discrepancy exceeding the $200 threshold. Billing should verify the invoice and issue a correction or credit."
+}
+```
+
+→ Full output for all 5 messages: `data/outputs/processed_records.json` (run CLI to generate)
 
 ---
 

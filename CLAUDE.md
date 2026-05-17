@@ -18,7 +18,7 @@ for human review.
 
 **Role of each component:**
 - **n8n workflow** — the assessment deliverable. All six pipeline steps run inside n8n, triggered by HTTP webhook. This is what the evaluator should see and run first.
-- **Python CLI** (`backend/scripts/run_pipeline.py`) — calls the Anthropic API directly to verify prompt outputs and generate `data/outputs/processed_records.json` for submission. Not a replacement for n8n — a verification and iteration tool.
+- **Python CLI** (`backend/scripts/run_pipeline.py`) — calls the Groq API directly (same model as n8n) to verify prompt outputs and generate `data/outputs/processed_records.json` for submission. Not a replacement for n8n — a verification and iteration tool.
 - **FastAPI + React web app** — proof-of-concept showing how this design scales to production. The same six-step pipeline runs over a REST API with SSE streaming and a React operator UI. Not the primary deliverable; included to demonstrate production-readiness thinking.
 
 ---
@@ -64,13 +64,13 @@ arcvault-intake-triage-pipeline/
 n8n import:workflow --input=n8n/workflow.json
 n8n start
 ```
-Open http://localhost:5678, add Anthropic API key credential (see n8n/README.md), activate workflow.
+Open http://localhost:5678, add Groq API key credential (see n8n/README.md), activate workflow.
 Full guide with all 5 curl commands and demo script → `n8n/README.md`.
 
 ### 2 — Python CLI (Verification / Output Generation)
 ```bash
-cp backend/.env.example .env   # fill in GROQ_API_KEY or ANTHROPIC_API_KEY
-pip install anthropic python-dotenv
+cp backend/.env.example .env   # fill in GROQ_API_KEY
+pip install openai python-dotenv
 python backend/scripts/run_pipeline.py        # generates data/outputs/processed_records.json
 python backend/scripts/validate_outputs.py   # validates output schema for submission
 ```
@@ -289,20 +289,20 @@ Re-add `.github/` only if the repo is pushed to GitHub and CI is actually desire
 - [x] Update n8n/README.md: Groq credential setup, Google Sheets setup, Webhook.site setup — Session 7
 
 **Still required before submitting:**
-- [ ] Get free Groq API key at console.groq.com → add as "Groq API" HTTP Header Auth credential in n8n
-- [ ] Apply Groq API credential to Steps 2, 3, 5 nodes in n8n
-- [ ] Set up Webhook.site URL → update Output: Webhook.site node URL
-- [ ] Set up Google Sheet with 14 column headers → add Google Sheets OAuth2 credential → configure Output: Google Sheets node
-- [ ] Activate the workflow → send all 5 curl commands → confirm each returns correct structured JSON
-- [ ] Verify records appear in Webhook.site and Google Sheet
-- [ ] Run `python backend/scripts/run_pipeline.py` to generate `data/outputs/processed_records.json`
-- [ ] Run `python backend/scripts/validate_outputs.py` to confirm all 5 records pass schema validation
+- [x] Groq API key added as credential in n8n — done
+- [x] Credential applied to Steps 2, 3, 5 nodes — done
+- [x] Webhook.site URL configured — done
+- [x] Google Sheets credential + node configured — done
+- [x] All 5 curl commands executed — workflow confirmed working
+- [x] Records appear in Webhook.site and Google Sheet — confirmed
+- [x] `processed_records.json` generated and validated — all 5 records pass, 2 escalated
+- [x] Prompt fixes: confidence score variance + discrepancy extraction — fixed and re-run
 - [ ] Record Loom demo: canvas walkthrough + 2 curl calls showing execution log + Webhook.site + Sheets (5–8 min)
 
 **Deliverables checklist (per assessment Section 4):**
 - [x] 4.1 Working workflow — `n8n/workflow.json` (exportable + importable)
-- [ ] 4.1 Demo recording — Loom or screenshots of n8n execution steps
-- [ ] 4.2 Structured output file — `data/outputs/processed_records.json` (run CLI to generate)
+- [ ] 4.1 Demo recording — Loom or screenshots of n8n execution steps ← only thing left
+- [x] 4.2 Structured output file — `data/outputs/processed_records.json` (5 records, validated)
 - [x] 4.3 Prompt documentation — `prompts/classification_prompt.md`, `prompts/enrichment_prompt.md`, `prompts/summary_prompt.md`
 - [x] 4.4 Architecture write-up — `docs/architecture.md`
 
@@ -324,13 +324,14 @@ Current task: [describe what you want to do]
 
 See `.env.example` for all required vars. Key ones:
 
-| Variable | Description |
-|---|---|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key |
-| `N8N_WEBHOOK_URL` | Your n8n instance webhook URL |
-| `OUTPUT_PATH` | Path to write processed_records.json (default: `data/outputs/`) |
-| `ESCALATION_WEBHOOK` | Webhook.site URL for escalation queue |
-| `STANDARD_WEBHOOK` | Webhook.site URL for standard routing output |
+| Variable | Component | Description |
+|---|---|---|
+| `GROQ_API_KEY` | n8n + CLI | Groq API key — free tier at console.groq.com |
+| `ANTHROPIC_API_KEY` | Web app (optional) | Anthropic key for FastAPI multi-model support |
+| `OPENAI_API_KEY` | Web app (optional) | OpenAI key for FastAPI multi-model support |
+| `WEBHOOK_SITE_URL` | n8n | Unique URL from webhook.site |
+| `GOOGLE_SHEET_ID` | n8n | Sheet ID from Google Sheets URL |
+| `OUTPUT_DIR` | CLI + web app | Output directory (default: `data/outputs`) |
 
 ---
 
@@ -345,8 +346,8 @@ See `.env.example` for all required vars. Key ones:
 
 ### Option 2 — Python CLI (verification)
 ```bash
-cp backend/.env.example .env   # fill in GROQ_API_KEY or ANTHROPIC_API_KEY
-pip install anthropic python-dotenv
+cp backend/.env.example .env   # fill in GROQ_API_KEY
+pip install openai python-dotenv
 python backend/scripts/run_pipeline.py        # generates data/outputs/processed_records.json
 python backend/scripts/validate_outputs.py   # validates schema for submission
 ```
