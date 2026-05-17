@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 from typing import Optional, Union
 
 
-BASE_DIR = Path(__file__).parent.parent.parent.parent  # repo root
+BASE_DIR = Path(__file__).parent.parent.parent  # repo root
 
 # Model IDs as understood by the OpenAI Agents SDK / LiteLLM model-string convention.
 # Groq and Mistral models are prefixed so LitellmModel routes them correctly.
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     output_dir: str = str(BASE_DIR / "data" / "outputs")
 
     model_config = {
-        "env_file": str(BASE_DIR / ".env"),
+        "env_file": [str(BASE_DIR / "backend" / ".env"), str(BASE_DIR / ".env")],
         "extra": "ignore",
         "env_prefix": "",
     }
