@@ -53,6 +53,17 @@ def configure_env() -> None:
     if settings.mistral_api_key:
         os.environ["MISTRAL_API_KEY"] = settings.mistral_api_key
 
+    # The Agents SDK requires an OpenAI client for tracing even when using
+    # non-OpenAI models (Groq, Anthropic via LitellmModel). If no OpenAI key
+    # is configured, disable tracing and set a placeholder key so the SDK
+    # doesn't raise a missing-credentials error at startup.
+    from agents import set_default_openai_key, set_tracing_disabled
+    if settings.openai_api_key:
+        set_default_openai_key(settings.openai_api_key)
+    else:
+        set_tracing_disabled(True)
+        set_default_openai_key("not-used", use_for_tracing=False)
+
 
 def get_available_models() -> dict[str, list[str]]:
     available: dict[str, list[str]] = {}
