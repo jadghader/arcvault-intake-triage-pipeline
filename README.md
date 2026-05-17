@@ -1,6 +1,6 @@
 # ArcVault Intake & Triage Pipeline
 
-> AI Engineer Technical Assessment 
+> AI Engineer Technical Assessment
 
 An AI-powered intake, classification, enrichment, and routing pipeline for unstructured
 B2B customer support messages.
@@ -8,6 +8,15 @@ B2B customer support messages.
 **Primary delivery:** n8n webhook workflow (the assessed artifact).
 **Verification tool:** Python CLI — runs the same prompts headlessly and writes the output file.
 **Production proof-of-concept:** FastAPI + React web app — demonstrates how this system scales beyond n8n.
+
+---
+
+## Demo & Live Output
+
+| | Link |
+|---|---|
+| **Loom walkthrough** | [Watch demo](https://www.loom.com/share/8ac17aa9757a4c0f8c689cbd5e182ca3) |
+| **Google Sheets output** | [View live records](https://docs.google.com/spreadsheets/d/1VgcBo1nTvKt58YRfvH6e2CLX1X1wOCkjvbTS4GBRpI8/edit?usp=sharing) |
 
 ---
 
