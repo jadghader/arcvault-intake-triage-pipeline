@@ -129,10 +129,10 @@ async def test_generate_summary_returns_string():
         escalation_reason=None,
     )
 
-    mock_output = MagicMock()
-    mock_output.summary = "User is blocked from login due to a 403 error. Engineering should investigate the auth service."
+    mock_result = MagicMock()
+    mock_result.final_output = "User is blocked from login due to a 403 error. Engineering should investigate the auth service."
 
-    with patch("app.pipeline.summary.Runner.run", new=AsyncMock(return_value=_mock_runner_result(mock_output))):
+    with patch("app.pipeline.summary.Runner.run", new=AsyncMock(return_value=mock_result)):
         result = await generate_summary("Web Form", classification, enrichment, routing, "claude-sonnet-4-6")
 
     assert isinstance(result, str)
@@ -154,10 +154,10 @@ async def test_generate_summary_escalated_record():
         escalation_reason="Billing discrepancy $260 exceeds $200 threshold",
     )
 
-    mock_output = MagicMock()
-    mock_output.summary = "Invoice #8821 shows a $260 overcharge. This record has been escalated for human review."
+    mock_result = MagicMock()
+    mock_result.final_output = "Invoice #8821 shows a $260 overcharge. This record has been escalated for human review."
 
-    with patch("app.pipeline.summary.Runner.run", new=AsyncMock(return_value=_mock_runner_result(mock_output))):
+    with patch("app.pipeline.summary.Runner.run", new=AsyncMock(return_value=mock_result)):
         result = await generate_summary("Support Portal", classification, enrichment, routing, "claude-sonnet-4-6")
 
     assert "escalated" in result.lower() or "260" in result

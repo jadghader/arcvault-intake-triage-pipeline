@@ -1,4 +1,4 @@
-from agents import Agent, Runner
+from agents import Agent, Runner, AgentOutputSchema
 from app.schemas.pipeline import ClassificationResult, EnrichmentResult
 from app.config import resolve_model
 
@@ -30,7 +30,7 @@ def _make_agent(model: str) -> Agent:
         name="EnrichmentAgent",
         instructions=SYSTEM_PROMPT,
         model=resolve_model(model),
-        output_type=EnrichmentResult,
+        output_type=AgentOutputSchema(EnrichmentResult, strict_json_schema=False),
     )
 
 

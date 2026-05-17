@@ -1,4 +1,4 @@
-from agents import Agent, Runner
+from agents import Agent, Runner, AgentOutputSchema
 from pydantic import field_validator
 from app.schemas.pipeline import ClassificationResult
 from app.config import resolve_model
@@ -61,7 +61,7 @@ def _make_agent(model: str) -> Agent:
         name="ClassificationAgent",
         instructions=SYSTEM_PROMPT,
         model=resolve_model(model),
-        output_type=_ValidatedClassification,
+        output_type=AgentOutputSchema(_ValidatedClassification, strict_json_schema=False),
     )
 
 

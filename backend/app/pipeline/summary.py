@@ -1,5 +1,4 @@
 from agents import Agent, Runner
-from pydantic import BaseModel
 from app.schemas.pipeline import ClassificationResult, EnrichmentResult, RoutingResult
 from app.config import resolve_model
 
@@ -17,16 +16,12 @@ Tone: professional, direct. No filler like "I hope this helps".
 Return ONLY the summary text. No JSON, no labels."""
 
 
-class _SummaryOutput(BaseModel):
-    summary: str
-
-
 def _make_agent(model: str) -> Agent:
     return Agent(
         name="SummaryAgent",
         instructions=SYSTEM_PROMPT,
         model=resolve_model(model),
-        output_type=_SummaryOutput,
+        output_type=str,
     )
 
 
@@ -53,5 +48,4 @@ async def generate_summary(
         f"Source: {source}"
     )
     result = await Runner.run(agent, user_message)
-    output = result.final_output
-    return output.summary
+    return result.final_output
